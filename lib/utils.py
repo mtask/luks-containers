@@ -19,9 +19,11 @@ def mkfs(mapper,fs="ext4"):
         sys.exit(1)
 
 def mount(src_path, dst_path):
+    logging.info(f"Mounting {src_path} to {dst_path}")
     subprocess.call(["mount", src_path, dst_path])
 
 def umount(path):
+    logging.info(f"Unmounting {path}")
     subprocess.call(["umount", path])
 
 def ask_pass(new=False):
