@@ -26,6 +26,51 @@ options:
   -c, --close           Close container
 ```
 
+### Quick start
+
+1. Create a new container.
+
+```bash
+user@machine:~/$ sudo python3 lc.py --init --file /tmp/test.lc --size 500 
+LUKS password:
+Verify LUKS password:
+INFO:root:Creating 500MB container image
+INFO:root:Running luksFormat to /tmp/test.lc
+INFO:root:Running luksOpen to /tmp/test.lc (path) - test (mapper)
+INFO:root:Fromatting containers file system to ext4
+INFO:root:Mounting /dev/mapper/test to /mnt
+INFO:root:Container created to path /tmp/test.lc and mounted to path /mnt
+```
+
+2. Do something with the container
+
+```bash
+user@machine:~/$ sudo bash -c "echo 'secret text' > /mnt/secret.txt"
+```
+
+3. Close the container
+
+```bash
+user@machine:~/$ sudo python3 lc.py --quick-close
+1) test
+Select container (N): 1
+INFO:root:Unmounting /mnt
+INFO:root:Running luksClose to test
+```
+
+4. Re-open the container when neede
+
+```bash
+user@machine:~/$ sudo python3 lc.py --quick-open
+1) test
+Select container (N): 1
+LUKS password:
+INFO:root:Running luksOpen to /tmp/test.lc (path) - test (mapper)
+INFO:root:Mounting /dev/mapper/test to /mnt
+user@machine:~/$ sudo cat /mnt/secret.txt 
+secret text
+```
+
 ## Creating container
 
 * With password and no header file
@@ -45,6 +90,8 @@ sudo python3 lc.py --init --file /tmp/test.lc --size 500 --header-file /tmp/head
 ```bash
 sudo python3 lc.py --init --file /tmp/test.lc --size 500 --header-file /tmp/header.file --password-file /tmp/password.file
 ```
+
+* Use `--mount-path` to specify other mount path than `/mnt/`.
 
 ## Opening containers
 
