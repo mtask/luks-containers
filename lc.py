@@ -11,46 +11,22 @@ from lib.utils import create_img_file, mkfs, mount, umount, ask_pass
 
 logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 
-def init_q():
-    dir_path = input("Give directory path for the container: ")
-    if not os.path.isdir(dir_path):
-        logging.error("Directory path does not exist")
-        sys.exit(1)
-    mapper = input("Give name for the container: ")
-    size = input("Give size for the container(MB): ")
-    q_pw = input("Use password file [N/y]: ")
-    if q_pw.lower() == "y":
-        pw_file = input("Give path to EXISTING password file: ")
-        password = None
-        if not os.path.isfile(pw_file):
-            logging.error("Password file does not exist")
-            sys.exit(1)
-    else:
-        password = ask_pass(new=True)
-        pw_file = None
-    q_h = input("Use detached header [N/y]: ")
-    if q_h.lower() == "y":
-        header = input("Give path to header file/device: ")
-    else:
-        header = None
-    return dir_path, mapper, size, password, pw_file, header
-
 def parse_args():
     parser = argparse.ArgumentParser(
                 prog='lc',
                 description='LUKS containers')
-    i_parser = parser.add_argument_group(title="Create containers")
-    i_parser.add_argument('-i', '--init', action='store_true', help="Initialize a new container")
-    o_parser = parser.add_argument_group(title="Open container")
-    o_parser.add_argument('-o', '--open',metavar="PATH", help="Open container in PATH")
-    o_parser.add_argument('-m', '--mount',metavar="PATH", help="PATH to mount container")
-    o_parser.add_argument('-p', '--password', action='store_true', help="Use password")
-    o_parser.add_argument('-pf', '--password-file', metavar="PATH", help="Use password file in PATH")
-    o_parser.add_argument('-hf', '--header-file', metavar="PATH", help="Use header file in PATH")
-    c_parser = parser.add_argument_group(title="Close container")
-    c_parser.add_argument('-c', '--close', metavar="PATH", help="Close container in PATH")
-    c_parser.add_argument('-u', '--umount',metavar="PATH", help="Mount PATH to container (if mounted)")
+    parser.add_argument('-i', '--init', action='store_true', help="Initialize a new container")
+    parser.add_argument('-s', '--size', metavar="SIZE", help="Container size in MB")
+    parser.add_argument('-o', '--open', action='store_true', help="Open container")
+    parser.add_argument('-m', '--mount-path', metavar="PATH", help="PATH to mount container (default /mnt/)", default="/mnt")
+    parser.add_argument('-f', '--file', metavar="NAME", help="Container path. Must end with '.lc'.", required=True)
+    parser.add_argument('-pf', '--password-file', metavar="PATH", help="Use password file in PATH. Password prompted if not specified.")
+    parser.add_argument('-hf', '--header-file', metavar="PATH", help="Use header file or device in PATH. Does not need to exist with --init.")
+    parser.add_argument('-c', '--close', action='store_true', help="Close container")
     args = parser.parse_args()
+    if args.init and not args.size:
+        logging.error("You must specify --size <MB> with --init")
+        sys.exit(1)
     return args
 
 def create_container(path, mapper, size, password, pw_file, header):
@@ -59,29 +35,49 @@ def create_container(path, mapper, size, password, pw_file, header):
     luks.format()
     luks.open()
     mkfs(f"/dev/mapper/{mapper}")
-    luks.close()
+
+def validate_path(path):
+    if not path.endswith('.lc'):
+        logging.error('Path must end with ".lc"')
+        sys.exit(1)
+    return path
+
+def build_container(args):
+    container = {}
+    container['path'] = validate_path(args.file)
+    container['size'] = args.size
+    container['mount_path'] = args.mount_path
+    container['password_file'] = args.password_file
+    container['header_file'] = args.header_file
+    container['mapper'] = os.path.basename(args.file).replace('.lc', '')
+    new_container = True if args.init else False
+    if not args.password_file and not args.close:
+        container['password'] = ask_pass(new=new_container)
+    else:
+        container['password'] = None
+    return container
 
 def main(args):
+    container = build_container(args)
     if args.init:
-        dir_path, mapper, size, password, pw_file, header = init_q()
-        path = os.path.join(dir_path, f"{mapper}.lc")
-        create_container(path, mapper, size, password, pw_file, header)
-        logging.info(f"Container created to path {path}")
-        sys.exit()
+        create_container(
+            container['path'],
+            container['mapper'],
+            container['size'],
+            container['password'],
+            container['password_file'],
+            container['header_file']
+        )
+        mount(f"/dev/mapper/{container['mapper']}", args.mount_path)
+        logging.info(f"Container created to path {container['path']} and mounted to path {args.mount_path}")
+        sys.exit(0)
     elif args.open:
-        if args.password:
-            password = ask_pass()
-        else:
-            password = None
-        mapper = os.path.basename(args.open).replace('.lc', '')
-        luks = Luks(args.open, mapper, password, args.header_file, args.password_file)
+        luks = Luks(container['path'], container['mapper'], container['password'], container['header_file'], container['password_file'])
         luks.open()
-        mount(f"/dev/mapper/{mapper}", args.mount)
+        mount(f"/dev/mapper/{container['mapper']}", args.mount_path)
     elif args.close:
-        mapper = os.path.basename(args.close).replace('.lc', '')
-        if args.umount:
-            umount(args.umount)
-        luks = Luks(None, mapper, None, args.header_file, args.password_file)
+        umount(args.mount_path)
+        luks = Luks(None, container['mapper'], None, container['header_file'], container['password_file'])
         luks.close()
 
 if __name__=="__main__":
